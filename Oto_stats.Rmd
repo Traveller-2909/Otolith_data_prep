@@ -1,0 +1,153 @@
+---
+title: "Oto_stats"
+author: "TR"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r packages, include=FALSE}
+library(tidyverse)
+library(ggplot2)
+library(knitr)
+library(lubridate)
+```
+
+```{r cleanup}
+#script fo cleaning up SIMS files from GFZ, may need to be changed according to data structure
+rm(list = ls())
+
+Oto_all <- read.delim("Oto_all_2021.txt", header = TRUE, stringsAsFactors = FALSE, sep = "\t")
+
+#Eliminate point measurements for e.g., pilot
+Oto_all <- Oto_all[Oto_all$Type..Tr.Pt. != "Pt",]
+
+unique(substr(Oto_all$Analysis, 8,9))
+
+#cleanup
+Otopike <- Oto_all %>%
+  transmute(measurement = as.numeric(substr(Analysis, nchar(Analysis)-1, nchar(Analysis))),
+            ID = substr(Analysis, 5,6),
+            ID2 = Otolith.number,
+            date = lubridate::as_date(parse_date_time(Date, orders = c("dmy"))),
+            d18O = 0.97001 * as.numeric(d18O.SMOW) -29.99,
+            x = east.west..um.,
+            y = north.south..um.,
+            SE_permil = X1SE..permil.,
+            SE_percent = X1SE....,
+            OH = X16O1H.16O.measured)#%>%
+  #group_by(ID)%>%
+  #mutate(measurement = order(desc(measurement_inv)))
+
+
+#Order to avoid disaster
+Otopike <- Otopike[order(Otopike$ID),]
+
+#Calculate Distances
+IDOto <- unique(Otopike$ID)
+
+Dist <- NULL
+
+for (i in 1:length(IDOto)){
+  d <- sqrt(((sqrt(Otopike[which(Otopike$ID == IDOto[i]),]$x^2)) - 
+               (sqrt((Otopike[which(Otopike$ID == IDOto[i] & Otopike$ID2 == "core"),]$x)^2)))^2 +
+              ((sqrt(Otopike[which(Otopike$ID == IDOto[i]),]$y^2)) - 
+                 (sqrt((Otopike[which(Otopike$ID == IDOto[i] & Otopike$ID2 == "core"),]$y)^2)))^2)
+
+  Dist <- c(Dist, d)
+}
+
+Otopike$Distance_um <- Dist
+
+#Check for hickups
+Otopike[Otopike$ID2 == "core",]$Distance_um
+
+#This isn´t even my final form
+Oto_distances <- Otopike %>%
+  transmute(ID = ID,
+            ID2 = ID2,
+            measurement=measurement,
+            date = date,
+            Distance_um = Distance_um,
+            d18O = d18O,
+            OH = OH,
+            SE_permil = SE_permil)%>%
+  group_by(ID)%>%
+  arrange(desc(Distance_um))
+
+write.table(Oto_distances, file = "Otolith_data_2021_clean_with_distance_um.txt", dec = ".", sep = ";", row.names = FALSE)
+```
+
+```{r automated SIMS plotting}
+rm(list = ls())
+
+Oto_profiles <- read.delim("Otolith_data_2021_clean_with_distance_um.txt", header = TRUE, dec = ".", sep = ";")
+
+Oto_sizes <- read.csv2("Oto_sizes_all_2021.csv", header = TRUE, stringsAsFactors = F, dec = ".", sep = ";")
+Oto_sizes$Size.x. <- as.numeric(Oto_sizes$Size.x.)
+# Oto_sizes$ID <- as.character(substr(Oto_sizes$Otolith, 1,2)) #If OtoID is 01, 02, 03, 04 etc
+# Oto_sizes$ID <- as.numeric(Oto_sizes$ID) #If OtoID is 1, 2, 3, 4 etc
+
+png(paste("Sample_2022/#A.png"), width = Oto_sizes[which(Oto_sizes$ID == "#A"), "Size.x.",], 
+    height = 0.5 * Oto_sizes[which(Oto_sizes$ID == "#A"), "Size.x.",], units = "px", bg = "black")
+par(xaxs = "i", mar = rep(0,4))
+plot(Oto_profiles[which(Oto_profiles$ID == "#A"), "Distance_um",], Oto_profiles[Oto_profiles$ID == "#A",]$d18O, main = "", 
+     xlab =  "", ylab = "", xlim = c(0, max(Oto_profiles[Oto_profiles$ID == "#A",]$Distance_um)), 
+     col.axis = "black", cex.axis = 1.7, type = "b", col = "white", lwd = 3, fg = "black", cex = 4, axes = FALSE)
+dev.off()
+
+IDOto <- "F1"
+IDOto <- unique(Oto_sizes$ID)
+IDOto <- unique(Oto_sizes[which(grepl("#", Oto_sizes$ID)==TRUE),"ID"])#If "special fish" needed
+
+for (i in 1:length(IDOto)) {
+  png(paste0("Pilot/",IDOto[i], ".png"), width = Oto_sizes[which(Oto_sizes$ID == IDOto[i]), "Size.x.",], 
+      height = 0.5 * Oto_sizes[which(Oto_sizes$ID == IDOto[i]), "Size.x.",], units = "px", bg = "black")
+  par(xaxs = "i", mar = rep(0,4))
+  plot(Oto_profiles[which(Oto_profiles$ID == IDOto[i]), "Distance_um",], 
+       Oto_profiles[which(Oto_profiles$ID == IDOto[i]), "d18O",], main = "", 
+       xlab =  expression(bold("Distance from core"~("\u03bc"~"m"))), ylab = expression(bold("\u03B4"^18*"O"~"otolith"~("VPDB"))), 
+       col.axis = "black", cex.axis = 3, type = "b", col = "white", lwd = 4, fg = "black", cex = 3, frame.plot = F, cex.lab = 2)
+  box(bty = "l")
+  dev.off()  
+}
+```
+
+```{r}
+#prettier plots
+for (i in 1:length(IDOto)) {
+  png(paste0("C:/Users/timor/Nextcloud2/Timo/BODDENHECHT/Geschwafel/Graphic repository/",IDOto[i], "_SIMS_2.png"), 
+      width = Oto_sizes[which(Oto_sizes$ID == IDOto[i]), "Size.x.",]+585, #Change "LA-Plots" for whatever 
+      height = 0.5 * (Oto_sizes[which(Oto_sizes$ID == IDOto[i]), "Size.x.",]+687), units = "px", bg = "black",
+      res = 300)    #path needed 
+  par(xaxs = "i", mar = c(12,10,0,0), font.axis=2, font.lab=2)
+  plot(Oto_profiles[which(Oto_profiles$ID == IDOto[i]), "Distance_um",], 
+       Oto_profiles[which(Oto_profiles$ID == IDOto[i]), "d18O",], main = "", 
+       xlab =  "", ylab = "", xlim = c(0, max(Oto_profiles[which(Oto_profiles$ID == IDOto[i]), "Distance_um",], na.rm = T)), 
+       col.axis = "white", cex.axis = 1.7, type = "l", col = "white", lwd = 10, fg = "white", cex = 2, axes = FALSE, pch = 19)
+  # axis(1, pos = mean(Oto_profiles[Oto_profiles$ID == IDOto[i],]$d18O), 
+  #      at = c(0, max(Oto_profiles[Oto_profiles$ID == IDOto[i],]$Distance_um)),
+  #      labels = FALSE, lwd.ticks = 5, tck = 0, col = "white", lty = 1, lwd = 5)
+  # axis(1, pos = mean(Oto_profiles$d18O), at = c(0, max(Oto_profiles$Distance_um)),
+  #      labels = FALSE, lwd.ticks = 5, tck = 0, col = "white", lty = 3, lwd = 5)
+  axis(2, pos = 0, las = 2, mgp = c(0, 2, 2), cex.axis = 3, lwd = 10, col = "white", col.axis = "white",
+       at = seq(round(min(Oto_profiles[which(Oto_profiles$ID == IDOto[i]), "d18O",], na.rm = T),0),
+                round(max(Oto_profiles[which(Oto_profiles$ID == IDOto[i]), "d18O",], na.rm = T),0),1),
+       labels = seq(round(min(Oto_profiles[which(Oto_profiles$ID == IDOto[i]), "d18O",], na.rm = T),0),
+                round(max(Oto_profiles[which(Oto_profiles$ID == IDOto[i]), "d18O",], na.rm = T),0),1))
+  axis(1, pos = -7.8, las = 2, mgp = c(0, 2, 2), cex.axis = 3, lwd = 10, col = "white", col.axis = "white",
+       at = seq(0,round(max(Oto_profiles[which(Oto_profiles$ID == IDOto[i]), "Distance_um",], na.rm = T),0)+500,500),
+       labels = seq(0, round(max(Oto_profiles[which(Oto_profiles$ID == IDOto[i]), "Distance_um",], na.rm = T),0)+500,500))
+  title(main = "", ylab = expression(bold("\u03B4"^18*"O"~"otolith"~("VPDB"))),
+        cex.lab = 3.5, col.lab = "white", line = 5, font=2)
+  title(xlab = expression(bold("Distance from core"~("\u03bc"~"m"))),
+        cex.lab = 3.5, col.lab = "white", line = 11, font=2)
+  dev.off()  
+}
+
+Oto_profiles[Oto_profiles$ID=="#D",]$d18O
+```
+
