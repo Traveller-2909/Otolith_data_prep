@@ -20,27 +20,27 @@ library(lubridate)
 #script fo cleaning up SIMS files from GFZ, may need to be changed according to data structure
 rm(list = ls())
 
-Oto_all <- read.delim("Oto_all_2021.txt", header = TRUE, stringsAsFactors = FALSE, sep = "\t")
+Oto_all <- read.delim("Sample_2022/Oto_2022_SIMS_raw.txt", header = TRUE, stringsAsFactors = FALSE, sep = "\t")
 
 #Eliminate point measurements for e.g., pilot
-Oto_all <- Oto_all[Oto_all$Type..Tr.Pt. != "Pt",]
+#Oto_all <- Oto_all[Oto_all$Type..Tr.Pt. != "Pt",]
 
-unique(substr(Oto_all$Analysis, 8,9))
+unique(substr(Oto_all$Analysis, 1,2))
 
 #cleanup
 Otopike <- Oto_all %>%
   transmute(measurement = as.numeric(substr(Analysis, nchar(Analysis)-1, nchar(Analysis))),
-            ID = substr(Analysis, 5,6),
-            ID2 = Otolith.number,
-            date = lubridate::as_date(parse_date_time(Date, orders = c("dmy"))),
+            ID = substr(Analysis, 1,2),
+            #ID2 = Otolith.number,
+            #date = lubridate::as_date(parse_date_time(Date, orders = c("dmy"))),
             d18O = 0.97001 * as.numeric(d18O.SMOW) -29.99,
             x = east.west..um.,
             y = north.south..um.,
             SE_permil = X1SE..permil.,
-            SE_percent = X1SE....,
-            OH = X16O1H.16O.measured)#%>%
-  #group_by(ID)%>%
-  #mutate(measurement = order(desc(measurement_inv)))
+            #SE_percent = X1SE....,
+            OH = X16O1H.16O.measured)%>%
+  group_by(ID)%>%
+  mutate(measurement_inv = order(desc(measurement)))
 
 
 #Order to avoid disaster
@@ -53,9 +53,9 @@ Dist <- NULL
 
 for (i in 1:length(IDOto)){
   d <- sqrt(((sqrt(Otopike[which(Otopike$ID == IDOto[i]),]$x^2)) - 
-               (sqrt((Otopike[which(Otopike$ID == IDOto[i] & Otopike$ID2 == "core"),]$x)^2)))^2 +
+               (sqrt((Otopike[which(Otopike$ID == IDOto[i] & Otopike$measurement_inv == 1),]$x)^2)))^2 +
               ((sqrt(Otopike[which(Otopike$ID == IDOto[i]),]$y^2)) - 
-                 (sqrt((Otopike[which(Otopike$ID == IDOto[i] & Otopike$ID2 == "core"),]$y)^2)))^2)
+                 (sqrt((Otopike[which(Otopike$ID == IDOto[i] & Otopike$measurement_inv == 1),]$y)^2)))^2)
 
   Dist <- c(Dist, d)
 }
@@ -63,14 +63,14 @@ for (i in 1:length(IDOto)){
 Otopike$Distance_um <- Dist
 
 #Check for hickups
-Otopike[Otopike$ID2 == "core",]$Distance_um
+Otopike[Otopike$measurement_inv == 1,]$Distance_um
 
 #This isn´t even my final form
 Oto_distances <- Otopike %>%
   transmute(ID = ID,
-            ID2 = ID2,
-            measurement=measurement,
-            date = date,
+            #ID2 = ID2,
+            #measurement=measurement,
+            #date = date,
             Distance_um = Distance_um,
             d18O = d18O,
             OH = OH,
@@ -78,7 +78,7 @@ Oto_distances <- Otopike %>%
   group_by(ID)%>%
   arrange(desc(Distance_um))
 
-write.table(Oto_distances, file = "Otolith_data_2021_clean_with_distance_um.txt", dec = ".", sep = ";", row.names = FALSE)
+write.table(Oto_distances, file = "Otolith_data_2022_clean_with_distance_um.txt", dec = ".", sep = ";", row.names = FALSE)
 ```
 
 ```{r automated SIMS plotting}
