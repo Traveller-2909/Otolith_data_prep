@@ -16,18 +16,19 @@ library(knitr)
 library(lubridate)
 ```
 
-```{r cleanup}
-#script fo cleaning up SIMS files from GFZ, may need to be changed according to data structure
+```{r cleanup raw SIMS}
+#script for cleaning up SIMS files from GFZ, may need to be changed according to data structure
 rm(list = ls())
 
-Oto_all <- read.delim("Sample_2022/Oto_2022_SIMS_raw.txt", header = TRUE, stringsAsFactors = FALSE, sep = "\t")
+Oto_all <- read.delim("Sample_2022/Oto_2022_SIMS_raw_part1.txt", header = TRUE, stringsAsFactors = FALSE, sep = "\t")
 
 #Eliminate point measurements for e.g., pilot
 #Oto_all <- Oto_all[Oto_all$Type..Tr.Pt. != "Pt",]
 
 unique(substr(Oto_all$Analysis, 1,2))
 
-#cleanup
+
+#cleanup, deactivate measurement_inv if columns contain "core" and "margin" values
 Otopike <- Oto_all %>%
   transmute(measurement = as.numeric(substr(Analysis, nchar(Analysis)-1, nchar(Analysis))),
             ID = substr(Analysis, 1,2),
@@ -66,7 +67,7 @@ Otopike$Distance_um <- Dist
 Otopike[Otopike$measurement_inv == 1,]$Distance_um
 
 #This isn´t even my final form
-Oto_distances <- Otopike %>%
+Oto_distances2 <- Otopike %>%
   transmute(ID = ID,
             #ID2 = ID2,
             #measurement=measurement,
@@ -81,12 +82,80 @@ Oto_distances <- Otopike %>%
 write.table(Oto_distances, file = "Otolith_data_2022_clean_with_distance_um.txt", dec = ".", sep = ";", row.names = FALSE)
 ```
 
+```{r cleanup core SIMS}
+#script for cleaning up SIMS files from GFZ, may need to be changed according to data structure
+rm(list = ls())
+
+Oto_all <- read.delim("Sample_2022/Oto_2022_SIMS-core_part2.txt", header = TRUE, stringsAsFactors = FALSE, sep = "\t")
+
+#Eliminate point measurements for e.g., pilot
+#Oto_all <- Oto_all[Oto_all$Type..Tr.Pt. != "Pt",]
+
+unique(substr(Oto_all$Analysis, 1,2))
+
+
+#cleanup, deactivate measurement_inv if columns contain "core" and "margin" values
+Otopike <- Oto_all %>%
+  transmute(measurement = as.numeric(substr(Analysis, nchar(Analysis)-1, nchar(Analysis))),
+            ID = substr(Analysis, 1,2),
+            #ID2 = Otolith.number,
+            #date = lubridate::as_date(parse_date_time(Date, orders = c("dmy"))),
+            d18O = 0.97001 * as.numeric(d18O.SMOW) -29.99,
+            x = east.west..um.,
+            y = north.south..um.,
+            SE_permil = X1SE..permil.,
+            #SE_percent = X1SE....,
+            OH = X16O1H.16O.measured)%>%
+  group_by(ID)%>%
+  mutate(measurement_inv = order(desc(measurement)))
+
+
+#Order to avoid disaster
+Otopike <- Otopike[order(Otopike$ID),]
+
+#Calculate Distances
+IDOto <- unique(Otopike$ID)
+
+Dist <- NULL
+
+for (i in 1:length(IDOto)){
+  d <- sqrt(((sqrt(Otopike[which(Otopike$ID == IDOto[i]),]$x^2)) - 
+               (sqrt((Otopike[which(Otopike$ID == IDOto[i] & Otopike$measurement == 1),]$x)^2)))^2 +
+              ((sqrt(Otopike[which(Otopike$ID == IDOto[i]),]$y^2)) - 
+                 (sqrt((Otopike[which(Otopike$ID == IDOto[i] & Otopike$measurement == 1),]$y)^2)))^2)
+
+  Dist <- c(Dist, d)
+}
+
+Otopike$Distance_um <- Dist
+
+#Check for hickups
+Otopike[Otopike$measurement == 1,]$Distance_um
+
+#This isn´t even my final form
+Oto_distances2 <- Otopike %>%
+  transmute(ID = ID,
+            #ID2 = ID2,
+            #measurement=measurement,
+            #date = date,
+            Distance_um = Distance_um,
+            d18O = d18O,
+            OH = OH,
+            SE_permil = SE_permil)%>%
+  group_by(ID)%>%
+  arrange(desc(Distance_um))
+
+Oto_distances <- rbind(Oto_distances, Oto_distances2)
+
+write.table(Oto_distances, file = "Otolith_data_2022_clean_core_with_distance_um.txt", dec = ".", sep = ";", row.names = FALSE)
+```
+
 ```{r automated SIMS plotting}
 rm(list = ls())
 
-Oto_profiles <- read.delim("Otolith_data_2021_clean_with_distance_um.txt", header = TRUE, dec = ".", sep = ";")
+Oto_profiles <- read.delim("Otolith_data_2022_clean_with_distance_um.txt", header = TRUE, dec = ".", sep = ";")
 
-Oto_sizes <- read.csv2("Oto_sizes_all_2021.csv", header = TRUE, stringsAsFactors = F, dec = ".", sep = ";")
+Oto_sizes <- read.delim("Oto_sizes_2022.txt", header = TRUE, stringsAsFactors = F, dec = ".", sep = "\t")
 Oto_sizes$Size.x. <- as.numeric(Oto_sizes$Size.x.)
 # Oto_sizes$ID <- as.character(substr(Oto_sizes$Otolith, 1,2)) #If OtoID is 01, 02, 03, 04 etc
 # Oto_sizes$ID <- as.numeric(Oto_sizes$ID) #If OtoID is 1, 2, 3, 4 etc
@@ -96,7 +165,7 @@ png(paste("Sample_2022/#A.png"), width = Oto_sizes[which(Oto_sizes$ID == "#A"), 
 par(xaxs = "i", mar = rep(0,4))
 plot(Oto_profiles[which(Oto_profiles$ID == "#A"), "Distance_um",], Oto_profiles[Oto_profiles$ID == "#A",]$d18O, main = "", 
      xlab =  "", ylab = "", xlim = c(0, max(Oto_profiles[Oto_profiles$ID == "#A",]$Distance_um)), 
-     col.axis = "black", cex.axis = 1.7, type = "b", col = "white", lwd = 3, fg = "black", cex = 4, axes = FALSE)
+     col.axis = "black", cex.axis = 1.7, type = "b", col = "black", lwd = 3, fg = "black", cex = 4, axes = FALSE)
 dev.off()
 
 IDOto <- "F1"
@@ -104,7 +173,7 @@ IDOto <- unique(Oto_sizes$ID)
 IDOto <- unique(Oto_sizes[which(grepl("#", Oto_sizes$ID)==TRUE),"ID"])#If "special fish" needed
 
 for (i in 1:length(IDOto)) {
-  png(paste0("Pilot/",IDOto[i], ".png"), width = Oto_sizes[which(Oto_sizes$ID == IDOto[i]), "Size.x.",], 
+  png(paste0("Sample_2022/",IDOto[i], ".png"), width = Oto_sizes[which(Oto_sizes$ID == IDOto[i]), "Size.x.",], 
       height = 0.5 * Oto_sizes[which(Oto_sizes$ID == IDOto[i]), "Size.x.",], units = "px", bg = "black")
   par(xaxs = "i", mar = rep(0,4))
   plot(Oto_profiles[which(Oto_profiles$ID == IDOto[i]), "Distance_um",], 
@@ -116,7 +185,7 @@ for (i in 1:length(IDOto)) {
 }
 ```
 
-```{r}
+```{r pretty plots for presentations}
 #prettier plots
 for (i in 1:length(IDOto)) {
   png(paste0("C:/Users/timor/Nextcloud2/Timo/BODDENHECHT/Geschwafel/Graphic repository/",IDOto[i], "_SIMS_2.png"), 
@@ -151,3 +220,216 @@ for (i in 1:length(IDOto)) {
 Oto_profiles[Oto_profiles$ID=="#D",]$d18O
 ```
 
+```{r divide trace elements into years, include=FALSE, echo=FALSE, eval=FALSE}
+
+rm(list = ls())
+
+#load pike data
+fishdata <- read.delim("Data/Otoliths/Scales_Oto_data.txt", header = T, 
+                       stringsAsFactors = F)
+names(fishdata) <- tolower(names(fishdata))
+fishdata <- fishdata%>%
+  transmute(fishID = id,
+            cdate = date,
+            TL_mm = tl,
+            weight = weight,
+            sex = sex,
+            area = area)
+
+#load annuli
+annu <- read.delim("Data/Otoliths/annuli_with_rad.txt", sep = "\t", header = T, 
+                   stringsAsFactors = F)
+
+#load trace elements
+elements <- read.delim("Data/Otoliths/Otolith_LA-data_all_clean_core_with_distance.txt", sep = "\t", 
+                       header = T, stringsAsFactors = F)
+elements <- elements%>%filter(Mount != "Pilot")
+names(elements) <- tolower(names(elements))
+#inverse order for distances
+elements <- elements %>% group_by(fish_id)%>%arrange(distance_um, by_group = F)%>%ungroup()%>%
+  arrange(fish_id)
+
+#remove 34
+elements <- elements[grepl("34", elements$sims_id)==F,]
+
+#Loop to break into years
+IDpike <- unique(elements$fish_id)
+radID <- unique(annu$year)
+y <- NULL
+yy <- NULL
+
+for (i in 1:length(IDpike)) {
+  for (j in 0:length(annu[which(annu$fishID==IDpike[i]), "year"])) {
+y <- ifelse(elements[which(elements$fish_id==IDpike[i]), "distance_um"]<
+                      annu[which(annu$fishID==IDpike[i]&annu$year==radID[j]), "rad_um"]&
+              elements[which(elements$fish_id==IDpike[i]), "distance_um"]
+              >=annu[which(annu$fishID==IDpike[i]&annu$year==radID[j-1]), "rad_um"],
+                    annu[which(annu$fishID==IDpike[i]&annu$year==radID[j]), "year"],
+            ifelse(elements[which(elements$fish_id==IDpike[i]), "distance_um"]>
+              max(annu[which(annu$fishID==IDpike[i]), "rad_um"])&
+                radID[j]==max(annu[which(annu$fishID==IDpike[i]), "year"]), 
+            max(annu[which(annu$fishID==IDpike[i]), "year"]),NA))
+yy <- c(yy, na.omit(y))
+  }
+}
+
+#test lengths (must be equal)
+
+length(elements[elements$fish_id == "BH-01594",]$distance_um)
+length(yy)
+
+elements$year <- yy
+
+#visual inspection
+ggplot(elements, aes(year, sr.ca))+stat_summary(fun = mean)+
+  scale_x_continuous(breaks = seq(1,13,1), labels = seq(1,13,1))+
+  theme_minimal()
+
+#prepare join
+elements <- elements%>%
+  transmute(simsID = sims_id,
+            fishID = fish_id,
+            Sr = sr.ca,
+            Na = na.ca,
+            Mg = mg.ca,
+            Ba = ba.ca,
+            Mn = mn.ca,
+            distance_um = distance_um,
+            year = year)
+
+pikedata <- annu%>%
+  inner_join(elements, by = c("fishID", "year"))
+
+pikedata_all <- pikedata%>%
+  inner_join(fishdata, by = "fishID")
+
+pikedata <- pikedata_all%>%
+  transmute(ID = fishID,
+            TL_mm = TL_mm,
+            weight = weight,
+            sex = sex,
+            area = area,
+            capt_date = cdate,
+            age = age,
+            cohort = cohort,
+            year = year,
+            inc_um = increment_um,
+            rad_um = rad_um,
+            core = core,
+            Sr = Sr,
+            Na = Na,
+            Mg = Mg,
+            Ba = Ba,
+            Mn = Mn,
+            LA_dist = distance_um)
+
+pikedata <- pikedata %>% group_by(ID)%>%arrange(LA_dist, by_group = F)%>%ungroup()%>%
+  arrange(ID)
+
+#filter out mother signal
+pike_no_core <- pikedata%>%filter(LA_dist >= core)
+
+#save table
+write.table(pikedata, "Data/pike_data_LA-ICPMS_years_with_core.txt", sep = "\t", 
+            dec = ".", row.names = F)
+write.table(pike_no_core, "Data/pike_data_LA-ICPMS_years_without_core.txt", sep = "\t", 
+            dec = ".", row.names = F)
+```
+
+```{r visual ceckup, include=FALSE, echo=FALSE, eval=FALSE}
+#script to plot each pike d18O & Sr/Ca plot into .png & compare them with annual
+#rings on pictures
+
+rm(list = ls())
+
+#load d18O data
+pike_d18O <- read.delim("Data/pike_data_d18O_years.txt", sep = "\t", dec = ".",
+                      header = T, stringsAsFactors = F)
+
+#load LA-ICPMS data
+pike_elements <- read.delim("Data/pike_data_LA-ICPMS_years_with_core.txt", sep = "\t",
+                            dec = ".", header = T, stringsAsFactors = F)
+
+IDOto <- unique(pike_elements$ID)
+
+#IDOto <- "BH-00355"
+
+#LA-ICPMS Plots
+for (i in 1:length(IDOto)) {
+  png(paste0("Test plots/LA-ICPMS/", IDOto[i], "_Sr.png"))
+  plot(pike_elements[which(pike_elements$ID == IDOto[i]), "LA_dist",], 
+       pike_elements[which(pike_elements$ID == IDOto[i]), "Sr",], main = "", 
+       xlab =  "", ylab = "", xlim = c(0, max(pike_elements[which(pike_elements$ID == IDOto[i]), "LA_dist",], na.rm = T)), 
+       col.axis = "black", cex.axis = 1.7, type = "l", col = "black", lwd = 2, fg = "black", cex = 2, axes = T, pch = 19)
+  abline(v = c(pike_elements[which(pike_elements$ID == IDOto[i]&
+                             pike_elements$year == 1), "rad_um"],
+               pike_elements[which(pike_elements$ID == IDOto[i]&
+                             pike_elements$year == 2), "rad_um"],
+               pike_elements[which(pike_elements$ID == IDOto[i]&
+                             pike_elements$year == 3), "rad_um"],
+               pike_elements[which(pike_elements$ID == IDOto[i]&
+                             pike_elements$year == 4), "rad_um"],
+               pike_elements[which(pike_elements$ID == IDOto[i]&
+                             pike_elements$year == 5), "rad_um"],
+               pike_elements[which(pike_elements$ID == IDOto[i]&
+                             pike_elements$year == 6), "rad_um"],
+               pike_elements[which(pike_elements$ID == IDOto[i]&
+                             pike_elements$year == 7), "rad_um"],
+               pike_elements[which(pike_elements$ID == IDOto[i]&
+                             pike_elements$year == 8), "rad_um"],
+               pike_elements[which(pike_elements$ID == IDOto[i]&
+                             pike_elements$year == 9), "rad_um"],
+               pike_elements[which(pike_elements$ID == IDOto[i]&
+                             pike_elements$year == 10), "rad_um"],
+               pike_elements[which(pike_elements$ID == IDOto[i]&
+                             pike_elements$year == 11), "rad_um"],
+               pike_elements[which(pike_elements$ID == IDOto[i]&
+                             pike_elements$year == 12), "rad_um"],
+               pike_elements[which(pike_elements$ID == IDOto[i]&
+                             pike_elements$year == 13), "rad_um"])) 
+  title(main = "", ylab = "Sr/Ca", cex.lab = 15, col.lab = "black", line = 30)
+  dev.off()  
+}
+
+pike_elements[pike_elements$ID == "BH-91328",]
+
+#d18O plots
+IDOto <- unique(pike_d18O$ID)
+
+for (i in 1:length(IDOto)) {
+  png(paste0("Test plots/d18O/", IDOto[i], "_Sr.png"))
+  plot(pike_d18O[which(pike_d18O$ID == IDOto[i]), "sims_dist",], 
+       pike_d18O[which(pike_d18O$ID == IDOto[i]), "d18O",], main = "", 
+       xlab =  "", ylab = "", xlim = c(0, max(pike_d18O[which(pike_d18O$ID == IDOto[i]), "sims_dist",], na.rm = T)), 
+       col.axis = "black", cex.axis = 1.7, type = "l", col = "black", lwd = 2, fg = "black", cex = 2, axes = T, pch = 19)
+  abline(v = c(pike_d18O[which(pike_d18O$ID == IDOto[i]&
+                             pike_d18O$year == 1), "rad_um"],
+               pike_d18O[which(pike_d18O$ID == IDOto[i]&
+                             pike_d18O$year == 2), "rad_um"],
+               pike_d18O[which(pike_d18O$ID == IDOto[i]&
+                             pike_d18O$year == 3), "rad_um"],
+               pike_d18O[which(pike_d18O$ID == IDOto[i]&
+                             pike_d18O$year == 4), "rad_um"],
+               pike_d18O[which(pike_d18O$ID == IDOto[i]&
+                             pike_d18O$year == 5), "rad_um"],
+               pike_d18O[which(pike_d18O$ID == IDOto[i]&
+                             pike_d18O$year == 6), "rad_um"],
+               pike_d18O[which(pike_d18O$ID == IDOto[i]&
+                             pike_d18O$year == 7), "rad_um"],
+               pike_d18O[which(pike_d18O$ID == IDOto[i]&
+                             pike_d18O$year == 8), "rad_um"],
+               pike_d18O[which(pike_d18O$ID == IDOto[i]&
+                             pike_d18O$year == 9), "rad_um"],
+               pike_d18O[which(pike_d18O$ID == IDOto[i]&
+                             pike_d18O$year == 10), "rad_um"],
+               pike_d18O[which(pike_d18O$ID == IDOto[i]&
+                             pike_d18O$year == 11), "rad_um"],
+               pike_d18O[which(pike_d18O$ID == IDOto[i]&
+                             pike_d18O$year == 12), "rad_um"],
+               pike_d18O[which(pike_d18O$ID == IDOto[i]&
+                             pike_d18O$year == 13), "rad_um"])) 
+  title(main = "", ylab = "d18O", cex.lab = 15, col.lab = "black", line = 30)
+  dev.off()  
+}
+
+```
