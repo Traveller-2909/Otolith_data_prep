@@ -132,8 +132,11 @@ Otopike$Distance_um <- Dist
 #Check for hickups
 Otopike[Otopike$measurement == 1,]$Distance_um
 
+#check
+plot(Otopike[Otopike$ID=="#S",]$Distance_um, Otopike[Otopike$ID=="#S",]$d18O, type = "b")
+
 #This isn´t even my final form
-Oto_distances2 <- Otopike %>%
+Oto_distances <- Otopike %>%
   transmute(ID = ID,
             #ID2 = ID2,
             #measurement=measurement,
@@ -225,7 +228,7 @@ Oto_profiles[Oto_profiles$ID=="#D",]$d18O
 rm(list = ls())
 
 #load annuli
-annuli <- read.delim("Pilot/Aging/Pilot_oto_annuli.txt", sep = "\t", header = T, 
+annuli <- read.delim("Sample_2022/Aging/Sample_2022_oto_annuli.txt", sep = "\t", header = T, 
                    stringsAsFactors = F)
 
 #Extract BH-numbers from sample names (ObjectJ)
@@ -239,8 +242,8 @@ annu <- annuli%>%
                          I %in% "edge"~as.character(length(unique(I))-1),
                          TRUE~I))%>%
  ungroup()%>%
- transmute(fishID = substr(Sample, 3,10),
-           simsID = gsub("-", "",substr(Sample,0,1)),
+ transmute(fishID = substrRight(Sample, 8),
+           simsID = gsub("_", "",substr(Sample,0,2)),
            quality = Quality,
            age = Age,
            cohort = Cohort,
@@ -263,7 +266,7 @@ annu$rad <- rad
 annu$inc <- as.numeric(annu$inc)
 
 #Change annu ID to match SIMS IDs
-annu$simsID <- paste0("#", annu$simsID)
+#annu$simsID <- paste0("#", annu$simsID)
 
 annu <- annu%>%
  transmute(simsID = simsID,
@@ -276,15 +279,17 @@ annu <- annu%>%
            yearclass = year,
            increment_um = increment_um,
            rad_um = rad)
+
+write.table(annu, "Sample_2022/annuli_with_rad.txt", sep = "\t", dec = ".", row.names = F)
 ```
 
 ```{r divide SIMS data into years, include=FALSE, echo=FALSE, eval=FALSE}
 #Read newest annu file
-annu <- read.delim("Pilot/annuli_with_rad.txt", header = T, stringsAsFactors = F, sep = "\t", dec = ".")
+annu <- read.delim("Sample_2022/annuli_with_rad.txt", header = T, stringsAsFactors = F, sep = "\t", dec = ".")
 
 
 #load SIMS data
-sims <- read.delim("Otolith_data_2021_clean_with_distance_um.txt", sep = ";", 
+sims <- read.delim("Otolith_data_2022_clean_core_with_distance_um.txt", sep = ";", 
                        header = T, stringsAsFactors = F)
 names(sims) <- tolower(names(sims))
 
@@ -293,11 +298,10 @@ sims <- sims %>% group_by(id)%>%arrange(distance_um, by_group = F)%>%ungroup()%>
   arrange(id)
 
 #remove 34
-sims <- sims[grepl("34", sims$id)==F,]
+#sims <- sims[grepl("34", sims$id)==F,]
 
 #select Pilot fish
 sims <- sims%>%filter(id%in%unique(annu$simsID)==TRUE)
-
 
 #load pike data
 fishdata <- read.delim("Scales_Oto_data.txt", header = T, 
@@ -312,12 +316,36 @@ fishdata <- fishdata%>%
             area = area)
 
 #correct annu placement
-ID <-"BH-01741"
-x <- 7
-y <- -50
+ID <-"BH-93178"
+x <- 1
+y <- 10
 
 annu[annu$fishID == ID & annu$year == x,]$rad_um <- annu[annu$fishID == ID & annu$year == x,]$rad_um+y
 annu[annu$fishID == ID & annu$year == x,]$increment_um <- annu[annu$fishID == ID & annu$year == x,]$increment_um+y
+
+#If you need to change the age of a fish
+# annu[annu$fishID == ID & annu$year == 2,]$rad_um <- annu[annu$fishID == ID & annu$year == 2,]$rad_um
+# annu[annu$fishID == ID & annu$year == 2,]$increment_um <- annu[annu$fishID == ID & annu$year == 2,]$increment_um+annu[annu$fishID == ID & annu$year == 1,]$increment_um
+# 
+# annu[annu$fishID == ID & annu$year == 2,]$year <- 1
+# annu[annu$fishID == ID & annu$yearclass == 2,]$yearclass <- 1
+# 
+# annu[annu$fishID == ID & annu$year == 3,]$year <- 2
+# annu[annu$fishID == ID & annu$yearclass == 3,]$yearclass <- 2
+# 
+# annu[annu$fishID == ID & annu$year == 4,]$year <- 3
+# annu[annu$fishID == ID & annu$yearclass == 4,]$yearclass <- 3
+# 
+# annu[annu$fishID == ID & annu$year == 5,]$year <- 4
+# annu[annu$fishID == ID & annu$yearclass == 5,]$yearclass <- 4
+# 
+# annu[annu$fishID == ID & annu$year == 6,]$year <- 5
+# annu[annu$fishID == ID & annu$yearclass == 6,]$yearclass <- 5
+# 
+# annu[annu$fishID == ID & annu$year == 7,]$year <- 6
+# annu[annu$fishID == ID & annu$yearclass == 7,]$yearclass <- 6
+# 
+# annu[annu$fishID == ID,]$age <- 5
 
 #Loop to break into years
 IDpike <- unique(sims$id)
@@ -350,16 +378,14 @@ sims$year <- yy
 #prepare join with pike data
 sims2 <- sims%>%
   group_by(id)%>%
-  mutate(fishID2 = id2[2])%>%
   ungroup()%>%
   transmute(simsID = id,
-            fishID = fishID2,
             d18O = d18o,
             distance_um = distance_um,
             year = year)
 
 pikedata <- annu%>%
-  inner_join(sims2, by = c("simsID", "fishID", "year"))
+  inner_join(sims2, by = c("simsID", "year"))
 
 pikedata_all <- pikedata%>%
   inner_join(fishdata, by = "fishID")
@@ -384,7 +410,7 @@ pike_d18O <- pikedata_all%>%
 IDOto <- unique(pike_d18O$ID)
 
 for (i in 1:length(IDOto)) {
-  png(paste0("Pilot/Test_plots/d18O/", IDOto[i], "_d18O.png"))
+  png(paste0("Sample_2022/Test_plots/d18O/", IDOto[i], "_d18O.png"))
   plot(pike_d18O[which(pike_d18O$ID == IDOto[i]), "sims_dist",], 
        pike_d18O[which(pike_d18O$ID == IDOto[i]), "d18O",], main = "", 
        xlab =  "", ylab = "", xlim = c(0, max(pike_d18O[which(pike_d18O$ID == IDOto[i]), "sims_dist",], na.rm = T)), 
@@ -416,7 +442,7 @@ for (i in 1:length(IDOto)) {
 }
 
 #save annu as table to change the distances
-#write.table(annu, "Pilot/annuli_with_rad.txt", sep = "\t", dec = ".", row.names = F)
+#write.table(annu, "Sample_2022/annuli_with_rad.txt", sep = "\t", dec = ".", row.names = F)
 ```
 
 ```{r save d18O data, include=FALSE, echo=FALSE, eval=FALSE}
