@@ -867,7 +867,7 @@ Joinpike <- SIMSpike%>%
 
 Alldata <- Joinpike%>%
   transmute(fishID=ID,
-            capt_date=capt_date.y,
+            capt_date=capt_date.x,
             TL_mm=TL_mm.y,
             weight=Weight.y,
             sex=sex.y,
