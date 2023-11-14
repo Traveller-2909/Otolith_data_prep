@@ -14,6 +14,7 @@ library(tidyverse)
 library(ggplot2)
 library(knitr)
 library(lubridate)
+library(data.table)
 ```
 
 ```{r cleanup raw SIMS, include=FALSE, echo=FALSE, eval=FALSE}
@@ -287,12 +288,11 @@ write.table(annu, "Sample_2022/annuli_with_rad.txt", sep = "\t", dec = ".", row.
 rm(list = ls())
 
 #Read newest annu file
-annu <- read.delim("Sample_2022/annuli_with_rad.txt", header = T, stringsAsFactors = F, sep = "\t", dec = ".")
+annu <- read.delim("Sample_2021/annuli_with_rad.txt", header = T, stringsAsFactors = F, sep = "\t", dec = ".")
 
 
 #load SIMS data
-sims <- read.delim("Sample_2022/Otolith_data_2022_clean_core_with_distance_um.txt", sep = ";", 
-                       header = T, stringsAsFactors = F)
+sims <- fread("Sample_2021/Otolith_data_2021_clean_core_with_distance_um.csv")
 names(sims) <- tolower(names(sims))
 
 #inverse order for distances
@@ -613,14 +613,15 @@ write.table(pike_LA_data, "Pilot/pike_data_LA-ICPMS_Pilot_years_with_core.txt", 
 rm(list = ls())
 
 #load d18O data
-pike_d18O <- read.delim("Sample_2022/pike_data_d18O_years.txt", sep = "\t", dec = ".",
-                      header = T, stringsAsFactors = F)
+pike_d18O <- fread("Sample_2022/pike_data_2022_d18O_years.txt")
 
 #load LA-ICPMS data
-pike_elements <- read.delim("Sample_2022/pike_data_LA-ICPMS_years_with_core.txt", sep = "\t",
-                            dec = ".", header = T, stringsAsFactors = F)
+pike_elements <- fread("Sample_2022/pike_data_LA-ICPMS_2023_years_with_core.txt")
 
 IDOto <- unique(pike_elements$ID)
+
+pike_d18O <- as.data.frame(pike_d18O)
+pike_elements <- as.data.frame(pike_elements)
 
 #IDOto <- "BH-00355"
 
